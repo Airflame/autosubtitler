@@ -1,0 +1,8 @@
+# PyTorch with CUDA 12.6 (also provides the cuBLAS/cuDNN DLLs faster-whisper needs on Windows):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu126
+torch
+faster-whisper>=1.1
+transformers>=4.40,<5
+sentencepiece
+hf_xet
+PySide6>=6.6
