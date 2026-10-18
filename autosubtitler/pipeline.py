@@ -104,7 +104,6 @@ class Pipeline:
         self.release_transcriber()
         self.release_translator()
 
-    # -- processing -------------------------------------------------------
     def process(self, media: Path, s: Settings, cb: Callbacks) -> Result:
         out_dir = s.output_dir or media.parent
         out_dir.mkdir(parents=True, exist_ok=True)
