@@ -117,11 +117,11 @@ class Pipeline:
                 return Result("", 0.0, [target_path])
 
         # Stage 1: speech recognition (0-50% of the progress bar, 0-100% if no translation)
-        span = 0.5 if translate else 1.0
+        progress_span = 0.5 if translate else 1.0
         whisper = self.transcriber(settings, callbacks)
         callbacks.log(f"Transcribing {media.name}...")
         transcript = whisper.transcribe(media, settings.source_language, "transcribe", settings.beam_size, settings.vad_filter,
-                                        lambda p: callbacks.progress(p * span, "Transcribing"), callbacks.is_cancelled)
+                                        lambda p: callbacks.progress(p * progress_span, "Transcribing"), callbacks.is_cancelled)
         src = languages.get(transcript.language)
         if settings.source_language is None:
             callbacks.log(f"Detected language: {src.name} ({transcript.language_probability:.0%} confidence)")
@@ -156,7 +156,7 @@ class Pipeline:
                 if tgt.code == "en" and src_nllb == languages.get("en").nllb:
                     translated = cues
                 else:
-                    translated = self._translate(cues, src_nllb, tgt, settings, callbacks, span)
+                    translated = self._translate(cues, src_nllb, tgt, settings, callbacks, progress_span)
                 write_srt(translated, target_path)
                 callbacks.log(f"Saved {target_path.name}")
                 if settings.low_vram:
@@ -174,7 +174,7 @@ class Pipeline:
         return [Cue(c.start, c.end, wrap(c.text, opts.max_line_chars, spaced)) for c in tr.segments]
 
     def _translate(self, cues: list[Cue], src_nllb: str, tgt: languages.Language, settings: Settings,
-                   callbacks: Callbacks, start: float) -> list[Cue]:
+                   callbacks: Callbacks, progress_start: float) -> list[Cue]:
         translator = self.translator(settings, callbacks)
         callbacks.log(f"Translating {len(cues)} subtitles into {tgt.name}...")
         flat = [" ".join(c.text.split()) for c in cues]
@@ -183,7 +183,7 @@ class Pipeline:
 
         results = translator.translate(
             texts, src_nllb, tgt.nllb,
-            progress=lambda p: callbacks.progress(start + p * (1 - start), "Translating"),
+            progress=lambda p: callbacks.progress(progress_start + p * (1 - progress_start), "Translating"),
             is_cancelled=callbacks.is_cancelled)
 
         max_chars = settings.max_line_chars if tgt.spaced else 20
