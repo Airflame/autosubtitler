@@ -72,22 +72,22 @@ class Pipeline:
         self._translator: Translator | None = None
 
     # -- model management -------------------------------------------------
-    def transcriber(self, s: Settings, cb: Callbacks) -> Transcriber:
-        key = (s.whisper_model, s.device, s.compute_type)
+    def transcriber(self, settings: Settings, callbacks: Callbacks) -> Transcriber:
+        key = (settings.whisper_model, settings.device, settings.compute_type)
         if self._transcriber is None or self._transcriber.key != key:
             self.release_transcriber()
-            cb.log(f"Loading Whisper '{s.whisper_model}' on {s.device}...")
-            self._transcriber = Transcriber(s.whisper_model, s.device, s.compute_type,
-                                            s.models_dir, s.allow_download, cb.log)
+            callbacks.log(f"Loading Whisper '{settings.whisper_model}' on {settings.device}...")
+            self._transcriber = Transcriber(settings.whisper_model, settings.device, settings.compute_type,
+                                            settings.models_dir, settings.allow_download, callbacks.log)
         return self._transcriber
 
-    def translator(self, s: Settings, cb: Callbacks) -> Translator:
-        key = (s.nllb_model, s.device)
+    def translator(self, settings: Settings, callbacks: Callbacks) -> Translator:
+        key = (settings.nllb_model, settings.device)
         if self._translator is None or self._translator.key != key:
             self.release_translator()
-            cb.log(f"Loading translator '{s.nllb_model}' on {s.device}...")
-            self._translator = Translator(s.nllb_model, s.device, s.models_dir,
-                                          s.allow_download, cb.log)
+            callbacks.log(f"Loading translator '{settings.nllb_model}' on {settings.device}...")
+            self._translator = Translator(settings.nllb_model, settings.device, settings.models_dir,
+                                          settings.allow_download, callbacks.log)
         return self._translator
 
     def release_transcriber(self) -> None:
@@ -104,68 +104,68 @@ class Pipeline:
         self.release_transcriber()
         self.release_translator()
 
-    def process(self, media: Path, s: Settings, cb: Callbacks) -> Result:
-        out_dir = s.output_dir or media.parent
+    def process(self, media: Path, settings: Settings, callbacks: Callbacks) -> Result:
+        out_dir = settings.output_dir or media.parent
         out_dir.mkdir(parents=True, exist_ok=True)
-        translate = s.target_language != ORIGINAL
+        translate = settings.target_language != ORIGINAL
 
         target_path = None
         if translate:
-            target_path = out_dir / f"{media.stem}.{languages.get(s.target_language).iso}.srt"
-            if target_path.exists() and not s.overwrite:
-                cb.log(f"Skipping, already exists: {target_path.name}")
+            target_path = out_dir / f"{media.stem}.{languages.get(settings.target_language).iso}.srt"
+            if target_path.exists() and not settings.overwrite:
+                callbacks.log(f"Skipping, already exists: {target_path.name}")
                 return Result("", 0.0, [target_path])
 
-        # Stage 1: speech recognition (0-60% of the progress bar, 0-100% if no translation)
-        span = 0.6 if translate else 1.0
-        whisper = self.transcriber(s, cb)
-        cb.log(f"Transcribing {media.name}...")
-        tr = whisper.transcribe(media, s.source_language, "transcribe", s.beam_size, s.vad_filter,
-                                lambda p: cb.progress(p * span, "Transcribing"), cb.is_cancelled)
-        src = languages.get(tr.language)
-        if s.source_language is None:
-            cb.log(f"Detected language: {src.name} ({tr.language_probability:.0%} confidence)")
+        # Stage 1: speech recognition (0-50% of the progress bar, 0-100% if no translation)
+        span = 0.5 if translate else 1.0
+        whisper = self.transcriber(settings, callbacks)
+        callbacks.log(f"Transcribing {media.name}...")
+        transcript = whisper.transcribe(media, settings.source_language, "transcribe", settings.beam_size, settings.vad_filter,
+                                        lambda p: callbacks.progress(p * span, "Transcribing"), callbacks.is_cancelled)
+        src = languages.get(transcript.language)
+        if settings.source_language is None:
+            callbacks.log(f"Detected language: {src.name} ({transcript.language_probability:.0%} confidence)")
 
         outputs: list[Path] = []
-        opts = SegmentOptions(max_line_chars=s.max_line_chars if src.spaced else 20)
-        original_cues = self._cues(tr, opts, src.spaced)
+        opts = SegmentOptions(max_line_chars=settings.max_line_chars if src.spaced else 20)
+        original_cues = self._cues(transcript, opts, src.spaced)
 
-        if not translate or s.also_save_original:
+        if not translate or settings.also_save_original:
             path = out_dir / f"{media.stem}.{src.iso}.srt"
             write_srt(original_cues, path)
             outputs.append(path)
-            cb.log(f"Saved {path.name}")
+            callbacks.log(f"Saved {path.name}")
 
         if translate:
-            tgt = languages.get(s.target_language)
+            tgt = languages.get(settings.target_language)
             if tgt.code == src.code:
                 write_srt(original_cues, target_path)
-                cb.log(f"Source is already {tgt.name}; saved transcript as {target_path.name}")
+                callbacks.log(f"Source is already {tgt.name}; saved transcript as {target_path.name}")
             else:
                 cues, src_nllb = original_cues, src.nllb
                 if src_nllb is None:
                     # NLLB can't read this language: let Whisper translate to English first.
-                    cb.log(f"{src.name} isn't supported by the translator; "
+                    callbacks.log(f"{src.name} isn't supported by the translator; "
                            "using Whisper's English translation as an intermediate step.")
-                    tr_en = whisper.transcribe(media, tr.language, "translate", s.beam_size,
-                                               s.vad_filter, lambda p: None, cb.is_cancelled)
-                    cues = self._cues(tr_en, SegmentOptions(max_line_chars=s.max_line_chars), True)
+                    tr_en = whisper.transcribe(media, transcript.language, "translate", settings.beam_size,
+                                               settings.vad_filter, lambda p: None, callbacks.is_cancelled)
+                    cues = self._cues(tr_en, SegmentOptions(max_line_chars=settings.max_line_chars), True)
                     src_nllb = languages.get("en").nllb
-                if s.low_vram:
+                if settings.low_vram:
                     self.release_transcriber()
                 if tgt.code == "en" and src_nllb == languages.get("en").nllb:
                     translated = cues
                 else:
-                    translated = self._translate(cues, src_nllb, tgt, s, cb, span)
+                    translated = self._translate(cues, src_nllb, tgt, settings, callbacks, span)
                 write_srt(translated, target_path)
-                cb.log(f"Saved {target_path.name}")
-                if s.low_vram:
+                callbacks.log(f"Saved {target_path.name}")
+                if settings.low_vram:
                     self.release_translator()
             if target_path not in outputs:
                 outputs.append(target_path)
 
-        cb.progress(1.0, "Done")
-        return Result(tr.language, tr.language_probability, outputs)
+        callbacks.progress(1.0, "Done")
+        return Result(transcript.language, transcript.language_probability, outputs)
 
     @staticmethod
     def _cues(tr: Transcript, opts: SegmentOptions, spaced: bool) -> list[Cue]:
@@ -173,20 +173,20 @@ class Pipeline:
             return build_cues(tr.words, opts, spaced)
         return [Cue(c.start, c.end, wrap(c.text, opts.max_line_chars, spaced)) for c in tr.segments]
 
-    def _translate(self, cues: list[Cue], src_nllb: str, tgt: languages.Language, s: Settings,
-                   cb: Callbacks, start: float) -> list[Cue]:
-        translator = self.translator(s, cb)
-        cb.log(f"Translating {len(cues)} subtitles into {tgt.name}...")
+    def _translate(self, cues: list[Cue], src_nllb: str, tgt: languages.Language, settings: Settings,
+                   callbacks: Callbacks, start: float) -> list[Cue]:
+        translator = self.translator(settings, callbacks)
+        callbacks.log(f"Translating {len(cues)} subtitles into {tgt.name}...")
         flat = [" ".join(c.text.split()) for c in cues]
-        groups = sentence_groups(cues) if s.sentence_context else [[i] for i in range(len(cues))]
+        groups = sentence_groups(cues) if settings.sentence_context else [[i] for i in range(len(cues))]
         texts = [" ".join(flat[i] for i in g) for g in groups]
 
         results = translator.translate(
             texts, src_nllb, tgt.nllb,
-            progress=lambda p: cb.progress(start + p * (1 - start), "Translating"),
-            is_cancelled=cb.is_cancelled)
+            progress=lambda p: callbacks.progress(start + p * (1 - start), "Translating"),
+            is_cancelled=callbacks.is_cancelled)
 
-        max_chars = s.max_line_chars if tgt.spaced else 20
+        max_chars = settings.max_line_chars if tgt.spaced else 20
         out: list[Cue] = []
         for group, text in zip(groups, results):
             parts = distribute(text, [len(flat[i]) for i in group], tgt.spaced)

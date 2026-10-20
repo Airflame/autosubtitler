@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .worker import Worker
 from .. import languages, model_store
 from ..pipeline import MEDIA_EXTENSIONS, ORIGINAL, Pipeline, Settings, default_models_dir
 from ..transcriber import WHISPER_MODELS
 from ..translator import NLLB_MODELS
-from .worker import Worker
 
 COL_FILE, COL_STATUS, COL_LANG, COL_OUTPUT = range(4)
 PATH_ROLE = Qt.UserRole
