@@ -35,6 +35,11 @@ The first run downloads the selected models to
 **Models & performance → Download selected models now**. After that, turn off
 **Allow downloading models** for strict offline operation.
 
+To store the models elsewhere (for example on a bigger drive), use **Move…**
+next to *Models folder*. It moves the downloaded models and switches the app
+to the new folder. **Browse…** only points the app at a folder that already
+contains models; nothing is moved.
+
 ## Usage
 
 1. Add files (button, folder, or drag and drop).

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import languages
+from .. import languages, model_store
 from ..pipeline import MEDIA_EXTENSIONS, ORIGINAL, Pipeline, Settings, default_models_dir
 from ..transcriber import WHISPER_MODELS
 from ..translator import NLLB_MODELS
@@ -29,6 +29,7 @@ class FunctionThread(QThread):
     finished_ok = Signal(object)
     failed = Signal(str)
     message = Signal(str)
+    progress = Signal(float)
 
     def __init__(self, fn):
         super().__init__()
@@ -237,9 +238,14 @@ class MainWindow(QMainWindow):
         self.models_dir_edit = QLineEdit()
         browse = QPushButton("Browse…")
         browse.clicked.connect(lambda: self._pick_dir(self.models_dir_edit))
+        browse.setToolTip("Use models from another folder (nothing is moved).")
+        move = QPushButton("Move…")
+        move.clicked.connect(self._move_models)
+        move.setToolTip("Move the downloaded models to a new folder and use it from now on.")
         dir_row = QHBoxLayout()
         dir_row.addWidget(self.models_dir_edit, 1)
         dir_row.addWidget(browse)
+        dir_row.addWidget(move)
 
         self.download_btn = QPushButton("Download selected models now")
         self.download_btn.clicked.connect(self._download_models)
@@ -503,15 +509,63 @@ class MainWindow(QMainWindow):
 
         self._run_helper(job)
 
+    def _move_models(self) -> None:
+        src = Path(self.models_dir_edit.text().strip() or default_models_dir())
+        entries = model_store.installed(src)
+        if not entries:
+            QMessageBox.information(self, "Move models", f"No downloaded models found in\n{src}")
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Move models to", str(src.parent))
+        if not folder:
+            return
+        dst = Path(folder)
+        size_gb = model_store.size_of(entries) / 2**30
+        names = ", ".join(e.name for e in entries)
+        if QMessageBox.question(
+                self, "Move models",
+                f"Move {size_gb:.1f} GB of models ({names})\n\nfrom: {src}\nto: {dst}\n\n"
+                "Moving to another drive copies the files first and can take a few minutes.") \
+                != QMessageBox.Yes:
+            return
+
+        self.pipeline.release()  # loaded models keep files open, which blocks moving on Windows
+        self._log(f"Moving models to {dst}…")
+        self.current_label.setText("Moving models…")
+        self.file_bar.setValue(0)
+
+        def job():
+            model_store.move_models(src, dst, self._progress_threadsafe)
+            return dst
+
+        self._run_helper(job, on_done=self._on_models_moved, on_failed=self._on_move_failed)
+
+    def _on_models_moved(self, dst: Path) -> None:
+        self.models_dir_edit.setText(str(dst))
+        self._save_settings()
+        self.current_label.setText("Idle")
+        self._log(f"Models moved. Models folder is now {dst}")
+
+    def _on_move_failed(self, err: str) -> None:
+        self.current_label.setText("Idle")
+        self.file_bar.setValue(0)
+        QMessageBox.warning(self, "Move models", err)
+
     def _log_threadsafe(self, text: str) -> None:
         if self.helper:
             self.helper.message.emit(text)
 
-    def _run_helper(self, fn) -> None:
+    def _progress_threadsafe(self, fraction: float) -> None:
+        if self.helper:
+            self.helper.progress.emit(fraction)
+
+    def _run_helper(self, fn, on_done=None, on_failed=None) -> None:
         self.helper = FunctionThread(fn)
-        self.helper.finished_ok.connect(lambda msg: self._log(str(msg)))
+        self.helper.finished_ok.connect(on_done or (lambda msg: self._log(str(msg))))
         self.helper.message.connect(self._log)
+        self.helper.progress.connect(lambda f: self.file_bar.setValue(int(f * 100)))
         self.helper.failed.connect(lambda err: self._log(f"Error: {err}"))
+        if on_failed:
+            self.helper.failed.connect(on_failed)
         self.helper.finished.connect(self._update_buttons)
         self.helper.start()
         self._update_buttons()
