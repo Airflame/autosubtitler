@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Autosubtitler")
+        self.setWindowIcon(QIcon("resources/icon.png"))
         self.resize(1250, 720)
         self.setAcceptDrops(True)
         self.qsettings = QSettings("Autosubtitler", "Autosubtitler")
