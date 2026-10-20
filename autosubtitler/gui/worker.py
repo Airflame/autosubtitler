@@ -35,13 +35,13 @@ class Worker(QThread):
             if self._cancel.is_set():
                 break
             self.file_started.emit(row)
-            cb = Callbacks(
+            callbacks = Callbacks(
                 log=self.log.emit,
                 progress=lambda f, stage, r=row: self.file_progress.emit(r, f, stage),
                 is_cancelled=self._cancel.is_set,
             )
             try:
-                result = self.pipeline.process(path, self.settings, cb)
+                result = self.pipeline.process(path, self.settings, callbacks)
                 self.file_done.emit(row, result.language, [str(p) for p in result.outputs])
             except Cancelled:
                 self.file_cancelled.emit(row)
