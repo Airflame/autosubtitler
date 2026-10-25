@@ -22,6 +22,7 @@ from ..translator import NLLB_MODELS
 
 COL_FILE, COL_STATUS, COL_LANG, COL_OUTPUT = range(4)
 PATH_ROLE = Qt.UserRole
+ICON_PATH = Path(__file__).resolve().parent.parent / "resources" / "icon.png"
 
 
 class FunctionThread(QThread):
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Autosubtitler")
-        self.setWindowIcon(QIcon("resources/icon.png"))
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.resize(1250, 720)
         self.setAcceptDrops(True)
         self.qsettings = QSettings("Autosubtitler", "Autosubtitler")
