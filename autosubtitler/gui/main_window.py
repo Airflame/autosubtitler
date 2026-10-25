@@ -57,7 +57,6 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Autosubtitler")
-        self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.resize(1250, 720)
         self.setAcceptDrops(True)
         self.qsettings = QSettings("Autosubtitler", "Autosubtitler")
